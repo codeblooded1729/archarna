@@ -10,7 +10,7 @@
   "license": "ISC",
   "dependencies": {
     "@types/crypto-js": "^4.1.1",
-    "circomlib": "^0.0.8",
+    "circomlib": "^2.0.5",
     "circomlibjs": "^0.0.8",
     "crypto": "^1.0.1",
     "declarator": "^1.4.2",
