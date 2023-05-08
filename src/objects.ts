@@ -23,10 +23,6 @@ type receiver_user_info = {
     merkle_tree_location: number,
 }
 
-// TODO: find type of signature
-type receiver_address_info = {
-    receiver_signature: any,
-}
 
 // TODO find types of commitment and proof
 type transaction_compliance_proof = {
@@ -36,9 +32,15 @@ type transaction_compliance_proof = {
 }
 
 type transaction_compliance_set = {
-    signature_transaction_commitment: any,
+    signature_transaction_commitment: [bigint, bigint],
     decrypted_identity_receiver: bigint,
     decrypted_identity_sender: bigint,
     name_sender: string,
     name_receiver: string,
+}
+
+type  receiver_address_info = {
+    signature: bigint,
+    receiver_address: bigint,
+    encrypted_identifier_receiver: bigint,
 }
