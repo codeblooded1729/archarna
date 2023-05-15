@@ -1,10 +1,13 @@
 import { before, describe, it, test } from "node:test";
-import { Archarna, KYC, Receiver, Reg, Spender } from "../src/protocol";
+import { Archarna } from "../src/archarna";
 import { assert, debug } from "console";
 import {poseidon, babyjub} from 'circomlibjs';
 import '../src/utils'
 import { buffer_to_bigints, decrypt, encrypt, random_elem_in_snark_field, sign_eddsa, verify_eddsa } from "../src/utils";
 import { verify } from "crypto";
+import { KYC } from "../src/kyc";
+import { Reg } from "../src/reg";
+import { User } from "../src/user";
 
 
 test('Archarna', async t => {
@@ -14,21 +17,18 @@ test('Archarna', async t => {
     let reg = new Reg();
 
     /// add the dummy users
-    let usr1 = new  Receiver(); usr1.setup('receiver1', proto, kyc);
-    let usr2 = new  Spender(); usr2.setup('sender1', proto, kyc);
-    let usr3 = new  Receiver(); usr3.setup('receiver2', proto, kyc);
-    let usr4 = new  Spender(); usr4.setup('sender2', proto, kyc);
+    let usr1 = new  User(); usr1.add_user('bob', proto, kyc);
+    let usr2 = new  User();; usr2.add_user('alice', proto, kyc);
+    let usr3 = new  User();; usr3.add_user('tom', proto, kyc);
+    let usr4 = new  User();; usr4.add_user('jerry', proto, kyc);
 
     // assign receiver and sender
-    let receiver: Receiver = usr1;
-    let sender: Spender = usr2;
-
-    // receiver generates the address
-    receiver.generate_address();
+    let receiver = usr1;
+    let sender= usr2;
 
     // sender initiates the transaction
     let value = 100;
-    sender.generate_transaction(value, receiver.receiver_address_info, proto, reg);
+    sender.generate_transaction(value, receiver, proto, reg);
 
     // Reg runs post transaction
     let commitment = proto.transaction_compliance_proof_list.slice(-1)[0].transaction_commitment;
@@ -42,8 +42,8 @@ test('Archarna', async t => {
     });
 
     await t.test('check address', () => {
-        let msg = [receiver.receiver_address_info.receiver_address, receiver.receiver_address_info.encrypted_identifier_receiver ];
-        let signature = receiver.receiver_address_info.signature;
+        let msg = [receiver.user_info.receiver_address, receiver.receiver_address_info.signed_message.message.encrypted_identifier ];
+        let signature = receiver.receiver_address_info.signed_message.signature;
         assert(verify_eddsa(msg, signature));
     });
 });
