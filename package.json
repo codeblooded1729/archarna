@@ -10,17 +10,21 @@
   "license": "ISC",
   "dependencies": {
     "@types/crypto-js": "^4.1.1",
-    "circomlib": "^2.0.5",
+    "circomlib": "^2.0.2",
     "circomlibjs": "^0.0.8",
     "crypto": "^1.0.1",
     "declarator": "^1.4.2",
     "fs": "^0.0.1-security",
     "merkletreejs": "^0.3.10",
-    "snarkjs": "^0.6.10",
+    "snarkjs": "^0.6.11",
     "ts-node": "^10.9.1",
     "typescript": "^5.0.4"
   },
   "devDependencies": {
-    "@types/node": "^20.1.0"
+    "@types/node": "^20.1.0",
+    "@typescript-eslint/eslint-plugin": "^5.59.6",
+    "@typescript-eslint/parser": "^5.59.6",
+    "eslint": "^8.40.0",
+    "why-is-node-running": "^2.2.2"
   }
 }

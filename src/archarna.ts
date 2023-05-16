@@ -1,11 +1,10 @@
 import "./objects";
 import "./utils"
-// @ts-ignore
+import snarkjs = require("snarkjs");
+import fs = require("fs");
 import {poseidon} from 'circomlibjs';
 import { MerkleTree }  from "merkletreejs";
-import { buffer_to_bigints, decrypt, encrypt, random_elem_in_snark_field, sign_eddsa } from "./utils";
-import { arch } from "node:os";
-
+import { buffer_to_bigints} from "./utils";
 
 export class Archarna {
     merkle_tree: MerkleTree;
@@ -18,6 +17,12 @@ export class Archarna {
             }
         );
         this.transaction_compliance_proof_list = [];
+    }
+
+    async verify_proof(proof: any, public_signals: any): Promise<boolean> {
+        const vKey = JSON.parse(fs.readFileSync("circuits/verification_key.json").toString());
+        const res = await snarkjs.groth16.verify(vKey, public_signals, proof);
+        return res;
     }
 
 }

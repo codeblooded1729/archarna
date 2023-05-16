@@ -1,3 +1,8 @@
+import snarkjs = require("snarkjs");
+import circomlibjs = require("circomlibjs");
+const eddsa = circomlibjs.eddsa;
+const babyJub = circomlibjs.babyjub;
+
 type user_info = {
     name: string,
     application_secret_key: bigint,
@@ -17,7 +22,7 @@ type transaction_attestation = {
 import { Archarna } from "./archarna";
 import { KYC, kyc_info } from "./kyc";
 import { Reg } from "./reg";
-import { decrypt, encrypt, random_elem_in_snark_field, sign_eddsa } from "./utils";
+import { buffer2bits, decrypt, encrypt, padbuffer, random_elem_in_snark_field, sign_eddsa } from "./utils";
 import {poseidon} from 'circomlibjs';
 
 
@@ -40,16 +45,16 @@ export class User {
     }
 
     add_user(name: string, archarna: Archarna, kyc: KYC){
-        let application_secret_key = random_elem_in_snark_field();
-        let derived_user_identifier = poseidon([application_secret_key]);
+        const application_secret_key = random_elem_in_snark_field();
+        const derived_user_identifier = poseidon([application_secret_key]);
         console.log("KYC process started.");
         console.log("KYC process completed...");
         console.log("Continuing Setup...");
         archarna.merkle_tree.addLeaf(Buffer.from(derived_user_identifier.toString()), false)
-        let merkle_tree_location = archarna.merkle_tree.getLeafIndex(Buffer.from(derived_user_identifier.toString()));
-        let spending_key = random_elem_in_snark_field();
+        const merkle_tree_location = archarna.merkle_tree.getLeafIndex(Buffer.from(derived_user_identifier.toString()));
+        const spending_key = random_elem_in_snark_field();
 
-        let kyc_elem: kyc_info = {
+        const kyc_elem: kyc_info = {
             name: name ,
             derived_user_identifier: derived_user_identifier,
             merkle_tree_location: merkle_tree_location,
@@ -70,17 +75,17 @@ export class User {
     }
 
     setup_receiving_address(derived_user_identifier: bigint) {
-        let receiver_address: bigint = random_elem_in_snark_field();
+        const receiver_address: bigint = random_elem_in_snark_field();
         this.user_info.receiver_address = receiver_address;
         console.log('Receiptant adress ' + receiver_address.toString());
         console.log('Preparing information');
 
-        let encrypted_identifier_receiver: bigint = encrypt(derived_user_identifier);
+        const encrypted_identifier_receiver: bigint = encrypt(derived_user_identifier);
 
         // TODO: Snark Proof. Optional
 
-        let msg = [receiver_address, encrypted_identifier_receiver]
-        let signature = sign_eddsa(msg);
+        const msg = [receiver_address, encrypted_identifier_receiver]
+        const signature = sign_eddsa(msg);
 
         // update receiver_address_info
         this.receiver_address_info = {
@@ -102,11 +107,11 @@ export class User {
         return true;
     }
 
-    generate_transaction(value: number, receiver: User, archarna: Archarna, reg: Reg){
+    async generate_transaction(value: number, receiver: User, archarna: Archarna, reg: Reg){
         console.log("Starting...");
 
-        let transaction_randomizer = random_elem_in_snark_field();
-        let commitment: bigint = poseidon([
+        const transaction_randomizer = random_elem_in_snark_field();
+        const commitment: bigint = poseidon([
             this.user_info.spending_key,
             transaction_randomizer,
             value,
@@ -120,11 +125,23 @@ export class User {
             RADDR_R: receiver.user_info.receiver_address,
     });
 
-        let derived_user_identifier: bigint = poseidon([this.user_info.application_secret_key]);
-        let encrypted_identifier_spender = encrypt(derived_user_identifier);
+        const derived_user_identifier: bigint = poseidon([this.user_info.application_secret_key]);
+        const encrypted_identifier_spender = encrypt(derived_user_identifier);
 
         // TODO: Generate snark proof
-        let proof = null;
+        // let proof = null;
+        const {proof: proof, publicSignals: public_signals} = await this.generate_proof(
+            archarna, 
+            derived_user_identifier, 
+            encrypted_identifier_spender,
+            commitment,
+            transaction_randomizer,
+            value,
+            receiver.user_info.receiver_address,
+            receiver.receiver_address_info.signed_message.message.encrypted_identifier,
+            receiver.receiver_address_info.signed_message.signature,
+        ); 
+
 
         console.log("Preparation complete");
         console.log('Information sent',  {
@@ -137,14 +154,15 @@ export class User {
         });
 
         // TODO: verify proof
-        let result = true;
+        const result = await archarna.verify_proof(proof, public_signals);
+        console.log("result is ", result);
 
         if(!result) {
             console.log('Compliancy cannot be established');
             return;
         }
 
-        let signature_commitment = {
+        const signature_commitment = {
             signature: sign_eddsa([commitment]),
             commitment: commitment
         };
@@ -174,7 +192,74 @@ export class User {
         console.log("trasaction completed");
     }
 
-    get_application_secret_key(): bigint {
-        return this.user_info.application_secret_key;
+    async generate_proof(
+        archarna: Archarna,
+        derived_user_identifier: bigint,
+        encrypted_identifier_spender: bigint,
+        commitment: bigint,
+        transaction_randomizer: bigint,
+        value: number,
+        receiver_address: bigint,
+        encrypted_identifier_receiver: bigint,
+        signature: bigint,
+    ): Promise<{
+        proof: any,
+        publicSignals: any,
+    }> {
+        const application_secret_key = this.user_info.application_secret_key;
+        const merkle_proof = archarna.merkle_tree.getProof(Buffer.from(derived_user_identifier.toString()));
+        const is_left = merkle_proof.map(value => (value.position === 'left') ? 1: 0);
+        const merkle_tree_proof = merkle_proof.map(value => BigInt(value.data.toString()));
+        const merkle_tree_root = BigInt(archarna.merkle_tree.getRoot().toString());
+        const merkle_proof_size = BigInt(merkle_proof.length);
+        const public_key = BigInt('15307176248879646135452683066383658494295615492562056334044031302984832359642');
+        const spending_key = this.user_info.spending_key;
+        
+        const msg = [receiver_address, encrypted_identifier_receiver];
+        let msg_buffer = Buffer.from(msg.map((m) => m.toString()).join('x')); 
+        msg_buffer = padbuffer(msg_buffer);
+
+        const prvKey = Buffer.from("0001020304050607080900010203040506070809000102030405060708090001", "hex");
+        const pubKey = eddsa.prv2pub(prvKey);
+        const pPubKey = babyJub.packPoint(pubKey);
+        const pSignature = eddsa.packSignature(signature);
+        const msgBits = buffer2bits( msg_buffer);
+        const r8Bits = buffer2bits( pSignature.slice(0, 32));
+        const sBits = buffer2bits( pSignature.slice(32, 64));
+        const aBits = buffer2bits( pPubKey);
+
+        console.log("length is", msgBits.length);
+
+        while(merkle_tree_proof.length < 4) {
+            merkle_tree_proof.push(BigInt("0"));
+            is_left.push(0);
+        }
+        const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+            {
+                derived_user_identifier,
+                application_secret_key, 
+                merkle_tree_proof, 
+                is_left, 
+                merkle_tree_root,
+                merkle_proof_size,
+                public_key,
+                encrypted_identifier_spender,
+                commitment,
+                spending_key,
+                transaction_randomizer,
+                value,
+                receiver_address,
+                msgBits,
+                r8Bits,
+                sBits,
+                aBits,
+                
+            },
+            "circuits/circuit_js/circuit.wasm", 
+            "circuits/circuit_0000.zkey");
+        return {
+            proof,
+            publicSignals,
+        }
     }
 }
