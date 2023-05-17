@@ -5,19 +5,6 @@ include "../node_modules/circomlib/circuits/comparators.circom";
 include "../node_modules/circomlib/circuits/switcher.circom";
 include "../node_modules/circomlib/circuits/eddsa.circom";
 
-template check_hash() {
-
-    signal input in;
-    signal input hash;
-
-    component poseidon = Poseidon(1);
-    poseidon.inputs[0] <== in;
-    hash === poseidon.out;
-
-}
-
-
-
 template check_merkle_proof(k) {
     signal input elem;
     signal input proof[k];
@@ -33,8 +20,12 @@ template check_merkle_proof(k) {
     curr[0] <== elem;
 
     for(var i = 0; i < k; i++) {
-        // (is_left[i] - 1) * is_left[i] === 0;
+        // ensure is_left[i] is a bit
+        (is_left[i] - 1) * is_left[i] === 0;
+
         poseidon[i] = Poseidon(2);
+
+        // switcher to switch whenever proof node is to left
         switcher_1[i] = Switcher();
         switcher_1[i].sel <== is_left[i];
         switcher_1[i].L <== curr[i];
@@ -42,10 +33,11 @@ template check_merkle_proof(k) {
         poseidon[i].inputs[0] <== switcher_1[i].outL;
         poseidon[i].inputs[1] <== switcher_1[i].outR;
 
-        less_than[i] = LessThan(3);
+        less_than[i] = LessThan(3);  // 3 is number of bits required to describe index and k
         less_than[i].in[0] <== i;
         less_than[i].in[1] <== index;
 
+        // switcher to ensure curr[i + 1] is equal to poseidon output if i < index or curr[i] otherwise
         switcher_2[i] = Switcher();
         switcher_2[i].sel <== less_than[i].out;
         switcher_2[i].L <== poseidon[i].out;
@@ -84,9 +76,9 @@ template final_circuit(levels_of_merkle_tree, msg_bitsize) {
     signal input aBits[256];
 
     // verify that DUI = H(ASK)
-    component hash_checker = check_hash();
-    hash_checker.in <== application_secret_key;
-    hash_checker.hash <== derived_user_identifier;
+    component hash_checker = Poseidon(1);
+    hash_checker.inputs[0] <== application_secret_key;
+    hash_checker.out === derived_user_identifier;
 
     // verify merkle proof
     component merkle_prover = check_merkle_proof(levels_of_merkle_tree);
@@ -119,20 +111,11 @@ template final_circuit(levels_of_merkle_tree, msg_bitsize) {
 }
 
 component main{public [
-    derived_user_identifier, 
-    merkle_tree_proof, 
-    is_left, 
     merkle_tree_root,
-    merkle_proof_size,
     public_key,
     encrypted_identifier_spender,
     commitment,
     spending_key,
-    transaction_randomizer,
     value,
-    receiver_address,
-    msgBits,
-    r8Bits,
-    sBits,
-    aBits
+    msgBits
 ]} = final_circuit(4, 1240);

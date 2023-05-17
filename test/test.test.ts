@@ -3,11 +3,11 @@ import { Archarna } from "../src/archarna";
 import assert = require('assert/strict');
 import {poseidon} from 'circomlibjs';
 import '../src/utils'
-import {decrypt, encrypt, random_elem_in_snark_field, sign_eddsa, verify_eddsa } from "../src/utils";
+import {random_elem_in_snark_field} from "../src/utils";
 import { KYC } from "../src/kyc";
 import { Reg } from "../src/reg";
 import { User } from "../src/user";
-import * as log from 'why-is-node-running';
+// import * as log from 'why-is-node-running';
 
 test('Archarna', async (t) => {
     /// Initialize the architecture
@@ -27,22 +27,22 @@ test('Archarna', async (t) => {
 
     //sender initiates the transaction
     const value = 100;
-    const _ = await sender.generate_transaction(value, receiver, proto, reg);
+    await sender.generate_transaction(value, receiver, proto, reg);
 
     // Reg runs post transaction
-    const commitment = proto.transaction_compliance_proof_list.slice(-1)[0].transaction_commitment;
+    const commitment = proto.get_latest_transaction_commitment();
     reg.post_transaction(commitment, kyc);
 
     await t.test('merkle_tree root computed properly',() => {
         const leaves: bigint[] = [usr1, usr2, usr3, usr4].map((x) => poseidon([x.user_info.application_secret_key]));
-        const root = BigInt(proto.merkle_tree.getRoot().toString());
-        const computed_root = poseidon([poseidon([leaves[0], leaves[1]]), poseidon([leaves[2], leaves[3]])]);
+        const root = BigInt(proto.get_merkle_root().toString());
+        const computed_root: bigint = poseidon([poseidon([leaves[0], leaves[1]]), poseidon([leaves[2], leaves[3]])]);
         assert.strictEqual(root, computed_root);
     })
 
     await t.test('merkle proof is correct', () => {
         const leaf = poseidon([usr2.user_info.application_secret_key]);
-        const merkle_tree_proof = proto.merkle_tree.getProof(Buffer.from(leaf.toString()));
+        const merkle_tree_proof = proto.get_merkle_proof(leaf.toString());
         const  is_left = merkle_tree_proof.map(value => (value.position === 'left') ? 1: 0);
         const proof = merkle_tree_proof.map(value => value.data);
 
@@ -57,30 +57,31 @@ test('Archarna', async (t) => {
             }
         }
 
-        assert.strictEqual(BigInt(proto.merkle_tree.getRoot().toString()), curr);
+        assert.strictEqual(BigInt(proto.get_merkle_root().toString()), curr);
     })
 
     await t.test('check address', () => {
-        const msg = [receiver.user_info.receiver_address, receiver.receiver_address_info.signed_message.message.encrypted_identifier ];
+        const msg: [bigint, bigint] = [receiver.user_info.receiver_address, receiver.receiver_address_info.signed_message.message.encrypted_identifier ];
         const signature = receiver.receiver_address_info.signed_message.signature;
-        assert.strictEqual(verify_eddsa(msg, signature), true);
+        assert.strictEqual(proto.verify_eddsa(msg, signature), true);
     })
-
-    // log();
 });
 
 describe('Check Encryption and Decryption', () => {
+    const proto = new Archarna();
+    const usr = new User();
     const num = random_elem_in_snark_field();
     it('encrypt and decrypt gives same thing', () => {
       
-        assert.strictEqual(decrypt(encrypt(num)), num);
+        assert.strictEqual(proto.decrypt(usr.encrypt(num, proto)), num);
     })
 })
 
 describe('Check signature', () => { 
-    const msg = [random_elem_in_snark_field(), random_elem_in_snark_field()];
-    const signature = sign_eddsa(msg);
+    const proto = new Archarna();
+    const msg: [bigint, bigint] = [random_elem_in_snark_field(), random_elem_in_snark_field()];
+    const signature = proto.sign_eddsa(msg);
     it('able to verify', () => {
-        assert.strictEqual(verify_eddsa(msg, signature), true);
+        assert.strictEqual(proto.verify_eddsa(msg, signature), true);
     });
 })
