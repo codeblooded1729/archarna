@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
 import { assert } from 'console';
+/** modulus of F_r of BN254 */
 const SNARK_FIELD_SIZE = BigInt('21888242871839275222246405745257275088548364400416034343698204186575808495617');
 
 export function modulo_snark_field(x: bigint): bigint {
@@ -28,6 +29,11 @@ export function buffer2bits(buff: Buffer): bigint[] {
     return res;
 }
 
+/**
+ * Pad the buffer by 'p' so that its bitsize matches the size required by the snark circuit.
+ * @param buffer 
+ * @returns 
+ */
 export function padbuffer(buffer: Buffer): Buffer {
     assert(buffer.length <= 155);
     if (buffer.length < 155) {

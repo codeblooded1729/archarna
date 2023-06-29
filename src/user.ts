@@ -3,33 +3,39 @@ import circomlibjs = require("circomlibjs");
 const eddsa = circomlibjs.eddsa;
 const babyJub = circomlibjs.babyjub;
 
-/// USR_INF
+export type SIG_RV = any;
+export type SIG_C = any;
+
+/** USR_INF */
 type user_info = {
-    /// NAME
+    /**NAME */
     name: string,
-    /// ASK
+    /** ASK */
     application_secret_key: bigint,
-    /// SPD_KY
+    /** SPD_KY */
     spending_key: bigint,
-    /// MK_LOC
+    /** MK_LOC */
     merkle_tree_location: number,
-    /// RADDR
+    /** RADDR */
     receiver_address: bigint,
 }
 
-/// TR_ATT
+/** TR_ATT */
 type transaction_attestation = {
+    /** VAL */
     value: number,
+    /** SIGM_C */
     signature_transaction_commitment: {
-        signature: any,
+        signature: SIG_C, 
         commitment: bigint,
     },
 }
 
-/// RADDR_INF
+/** RADDR_INF */ 
 type receiver_address_info = {
+    /** SIGM_RV */
     signed_message: {
-        signature: any,
+        signature: SIG_RV,
         message: {
             receiving_address: bigint,
             encrypted_identifier: bigint,
@@ -44,9 +50,13 @@ import { buffer2bits, modulo_snark_field, padbuffer, random_elem_in_snark_field,
 import {poseidon} from 'circomlibjs';
 
 
+/** entity USER */
 export class User {
+    /** USR_INF */
     user_info: user_info;
+    /** TR_ATT_LIS */
     transcaction_attestation_list: transaction_attestation[];
+    /** RADDR_INF */
     receiver_address_info: receiver_address_info;
 
     constructor(){
@@ -56,6 +66,8 @@ export class User {
     }
 
     /**
+     * Add user routine. This is triggered when user provides name and selects the 
+     * 'User Setup' function
      * @param name Name of the user 
      * @param archarna Archarna entity
      * @param kyc KYC entity
@@ -66,8 +78,9 @@ export class User {
         const application_secret_key = random_elem_in_snark_field();
 
         // hash ASK to get DUI
-        const derived_user_identifier = poseidon([application_secret_key]);
+        const derived_user_identifier: bigint = poseidon([application_secret_key]);
 
+        // for purpose of PoC, need to add sleep() to emulate process being done
         console.log("KYC process started.");
         console.log("KYC process completed...");
         console.log("Continuing Setup...");
@@ -105,7 +118,9 @@ export class User {
     }
 
     /**
-     * 
+     * This is a part of user setup, but also can be triggered separately by
+     * clicking 'Generate Recieving Address' button.
+     * It results in updating RADDR_INF
      * @param derived_user_identifier The DUI of the user entity
      * @returns void
      */
@@ -113,13 +128,10 @@ export class User {
         // generate random RADDR
         const receiver_address: bigint = random_elem_in_snark_field();
 
-        //update RADDR field of user entity
-        this.user_info.receiver_address = receiver_address;
-
         console.log('Receiptant adress ' + receiver_address.toString());
         console.log('Preparing information');
 
-        // EID_R = encrypt(DUI)
+        /** EID_R = encrypt(DUI) */
         const encrypted_identifier_receiver: bigint = this.encrypt(derived_user_identifier, archarna);
 
         // TODO: Snark Proof. Optional
@@ -127,11 +139,12 @@ export class User {
         // message to be signed is RADDR_R appended to EID_R
         const msg: [bigint, bigint]= [receiver_address, encrypted_identifier_receiver]
 
-        // SIGM_RV. This is signed by Archarna entity
-        const signature = archarna.sign_eddsa(msg);
+        /** SIG_RV. This is signed by Archarna entity */
+        const signature: SIG_RV = archarna.sign_eddsa(msg);
 
         // update receiver_address_info
         this.receiver_address_info = {
+            /** SIGM_RV */
             signed_message: {
                 signature: signature,
                 message: {
@@ -140,6 +153,9 @@ export class User {
                 }
             }
         }
+
+        // update RADDR field of USR_INF
+        this.user_info.receiver_address = receiver_address;
 
         console.log({
             SIG_RV: signature,
@@ -150,6 +166,9 @@ export class User {
         return true;
     }
     /**
+     * Before calling this, one should select the user and reciever from the
+     * drop down list of available NAME values. Then we enter the amount val
+     * and select 'Generate Transaction'.
      * @param value amount of transaction
      * @param receiver receiver entity
      * @param archarna Archarna entity
@@ -159,10 +178,10 @@ export class User {
     async generate_transaction(value: number, receiver: User, archarna: Archarna, reg: Reg){
         console.log("Starting...");
 
-        // generate random TRR
+        /** TRR */
         const transaction_randomizer = random_elem_in_snark_field();
 
-        // COMM = H(SPD_KY, TRR, VAL, RADDR_R)
+        /** COMM = H(SPD_KY, TRR, VAL, RADDR_R) */
         const commitment: bigint = poseidon([
             this.user_info.spending_key,
             transaction_randomizer,
@@ -177,10 +196,10 @@ export class User {
             RADDR_R: receiver.user_info.receiver_address,
         });
 
-        // DUI = H(ASK)
+        /** DUI = H(ASK_S) */
         const derived_user_identifier: bigint = poseidon([this.user_info.application_secret_key]);
 
-        // EID_S = encrypt
+        /** EID_S = encrypt(DUI) */
         const encrypted_identifier_spender = this.encrypt(derived_user_identifier, archarna);
 
         // Generate snark proof
@@ -207,7 +226,7 @@ export class User {
 
         });
 
-        // Archarn verifies the proof
+        // Archarna verifies the proof
         const result = await archarna.verify_proof(proof, public_signals);
 
         if(!result) {
@@ -215,12 +234,13 @@ export class User {
             return;
         }
 
-        // SIGM_C = (SIG_C, COMM )
+        /** SIGM_C = (SIG_C, COMM ) */
         const signature_commitment = {
             signature: archarna.sign_eddsa([commitment]),
             commitment: commitment
         };
 
+        // proof is verified and hence archarna has verified the compliancy
         console.log('Confirmation received',  {
             SIGM_C: signature_commitment,
         });
@@ -337,7 +357,12 @@ export class User {
         }
     }
 
-    /// Toy encryption function
+    /**
+     * Toy encryption algorithm
+     * @param data 
+     * @param archarna 
+     * @returns 
+     */
     encrypt(data: bigint, archarna: Archarna) {
         return modulo_snark_field(data * archarna.get_public_key());
     }
